@@ -88,7 +88,7 @@ export class NfcIntentHandler {
       if (onTagDiscoveredListener === null) {
         console.log(
           "Tag discovered, but no listener was set via setOnTagDiscoveredListener. Ndef: " +
-            JSON.stringify(result)
+          JSON.stringify(result)
         );
       } else {
         onTagDiscoveredListener(result);
@@ -544,14 +544,42 @@ export class Nfc implements NfcApi {
     input: WriteTagOptions
   ): Array<android.nfc.NdefRecord> {
     let nrOfRecords = 0;
+    nrOfRecords += input.bytesRecords ? input.bytesRecords.length : 0;
     nrOfRecords += input.textRecords ? input.textRecords.length : 0;
     nrOfRecords += input.uriRecords ? input.uriRecords.length : 0;
     let records = new Array.create(android.nfc.NdefRecord, nrOfRecords);
-
     let recordCounter: number = 0;
 
-    if (input.textRecords !== null) {
-      for (let i in input.textRecords) {
+    if (input.bytesRecords != null && input.bytesRecords != undefined) {
+      for (let i = 0; i < input.bytesRecords.length; i++) {
+        let record = input.bytesRecords[i];
+
+
+        let tnf = android.nfc.NdefRecord.TNF_WELL_KNOWN; // 0x01;
+
+        let type = Array.create("byte", 1);
+        type[0] = 0x54;
+
+        let id = Array.create("byte", record.id ? record.id.length : 0);
+        if (record.id) {
+          for (let j = 0; j < record.id.length; j++) {
+            id[j] = record.id[j];
+          }
+        }
+
+        let buffer = new DataView(record.payload)
+
+        let bytes = Array.create("byte", buffer.byteLength);
+        for (let j = 0; j < buffer.byteLength; j++) {
+          bytes[j] = buffer.getUint8(j);
+        }
+
+        records[recordCounter++] = new android.nfc.NdefRecord(tnf, type, id, bytes);
+      }
+    }
+
+    if (input.textRecords !== null && input.textRecords !== undefined) {
+      for (let i = 0; i < input.textRecords.length; i++) {
         let textRecord = input.textRecords[i];
 
         let langCode = textRecord.languageCode || "en";
@@ -579,12 +607,12 @@ export class Nfc implements NfcApi {
       }
     }
 
-    if (input.uriRecords !== null) {
-      for (let i in input.uriRecords) {
+    if (input.uriRecords !== null && input.uriRecords !== undefined) {
+      for (let i = 0; i < input.uriRecords.length; i++) {
         let uriRecord = input.uriRecords[i];
         let uri = uriRecord.uri;
 
-        let prefix;
+        let prefix: string = "";
 
         NfcUriProtocols.slice(1).forEach(protocol => {
           if ((!prefix || prefix === "urn:") && uri.indexOf(protocol) === 0) {

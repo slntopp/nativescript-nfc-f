@@ -77,9 +77,21 @@ export interface UriRecord {
   id?: Array<number>;
 }
 
+interface BytesRecord {
+  /**
+   * Bytes to write
+   */
+  payload: ArrayBufferLike;
+  /**
+   * Default [].
+   */
+  id?: Array<number>;
+}
+
 export interface WriteTagOptions {
   textRecords?: Array<TextRecord>;
   uriRecords?: Array<UriRecord>;
+  bytesRecords?: Array<BytesRecord>;
 }
 
 export interface NfcTagData {
