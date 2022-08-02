@@ -9,7 +9,7 @@ let onNdefDiscoveredListener: (data: NfcNdefData) => void = null;
 export class NfcIntentHandler {
   public savedIntent: android.content.Intent = null;
 
-  constructor() {}
+  constructor() { }
 
   parseMessage(): void {
     const activity =
@@ -56,7 +56,7 @@ export class NfcIntentHandler {
       if (onNdefDiscoveredListener === null) {
         console.log(
           "Ndef discovered, but no listener was set via setOnNdefDiscoveredListener. Ndef: " +
-            JSON.stringify(ndefJson)
+          JSON.stringify(ndefJson)
         );
       } else {
         onNdefDiscoveredListener(ndefJson);
@@ -361,7 +361,7 @@ export class Nfc implements NfcApi {
   public setOnTagDiscoveredListener(
     callback: (data: NfcTagData) => void
   ): Promise<any> {
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       onTagDiscoveredListener = callback;
       resolve();
     });
@@ -371,7 +371,7 @@ export class Nfc implements NfcApi {
     callback: (data: NfcNdefData) => void,
     options?: NdefListenerOptions
   ): Promise<any> {
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       // TODO use options, some day
       onNdefDiscoveredListener = callback;
       resolve();
@@ -379,7 +379,7 @@ export class Nfc implements NfcApi {
   }
 
   public eraseTag(): Promise<any> {
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const intent =
         Application.android.foregroundActivity.getIntent() ||
         nfcIntentHandler.savedIntent;
@@ -413,7 +413,7 @@ export class Nfc implements NfcApi {
   }
 
   public writeTag(arg: WriteTagOptions): Promise<any> {
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       try {
         if (!arg) {
           reject("Nothing passed to write");
@@ -464,7 +464,7 @@ export class Nfc implements NfcApi {
         this.intent = new android.content.Intent(activity, activity.getClass());
         this.intent.addFlags(
           android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP |
-            android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+          android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
         );
         this.pendingIntent = android.app.PendingIntent.getActivity(
           activity,
