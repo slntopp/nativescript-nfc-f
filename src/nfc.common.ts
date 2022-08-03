@@ -1,42 +1,3 @@
-export const NfcUriProtocols = [
-  "",
-  "http://www.",
-  "https://www.",
-  "http://",
-  "https://",
-  "tel:",
-  "mailto:",
-  "ftp://anonymous:anonymous@",
-  "ftp://ftp.",
-  "ftps://",
-  "sftp://",
-  "smb://",
-  "nfs://",
-  "ftp://",
-  "dav://",
-  "news:",
-  "telnet://",
-  "imap:",
-  "rtsp://",
-  "urn:",
-  "pop:",
-  "sip:",
-  "sips:",
-  "tftp:",
-  "btspp://",
-  "btl2cap://",
-  "btgoep://",
-  "tcpobex://",
-  "irdaobex://",
-  "file://",
-  "urn:epc:id:",
-  "urn:epc:tag:",
-  "urn:epc:pat:",
-  "urn:epc:raw:",
-  "urn:epc:",
-  "urn:nfc:"
-];
-
 export interface NdefListenerOptions {
   /**
    * iOS only (for now).
@@ -50,53 +11,15 @@ export interface NdefListenerOptions {
   scanHint?: string;
 }
 
-export interface TextRecord {
-  /**
-   * String of text to encode.
-   */
-  text: string;
-  /**
-   * ISO/IANA language code. Examples: 'fi', 'en-US'.
-   * Default 'en'.
-   */
-  languageCode?: string;
-  /**
-   * Default [].
-   */
-  id?: Array<number>;
-}
-
-export interface UriRecord {
-  /**
-   * String representing the uri to encode.
-   */
-  uri: string;
-  /**
-   * Default [].
-   */
-  id?: Array<number>;
-}
-
-interface BytesRecord {
-  /**
-   * Bytes to write
-   */
-  payload: ArrayBufferLike;
-  /**
-   * Default [].
-   */
-  id?: Array<number>;
-}
 
 export interface WriteTagOptions {
-  textRecords?: Array<TextRecord>;
-  uriRecords?: Array<UriRecord>;
-  bytesRecords?: Array<BytesRecord>;
+  sector: number;
+  buffer: Uint8Array
 }
 
 export interface NfcTagData {
   id?: Array<number>;
-  techList?: Array<string>;
+  read(sector: number, blocks: number[]): Array<Array<number>>
 }
 
 export interface NfcNdefRecord {
@@ -141,19 +64,11 @@ export interface NfcApi {
   available(): Promise<boolean>;
   enabled(): Promise<boolean>;
   writeTag(arg: WriteTagOptions): Promise<any>;
-  eraseTag(): Promise<any>;
   /**
    * Set to null to remove the listener.
    */
   setOnTagDiscoveredListener(
     callback: (data: NfcTagData) => void
-  ): Promise<any>;
-  /**
-   * Set to null to remove the listener.
-   */
-  setOnNdefDiscoveredListener(
-    callback: (data: NfcNdefData) => void,
-    options?: NdefListenerOptions
   ): Promise<any>;
 }
 
@@ -164,17 +79,6 @@ export class Nfc implements NfcApi {
   }
 
   enabled(): Promise<boolean> {
-    return undefined;
-  }
-
-  eraseTag(): Promise<any> {
-    return undefined;
-  }
-
-  setOnNdefDiscoveredListener(
-    callback: (data: NfcNdefData) => void,
-    options?: NdefListenerOptions
-  ): Promise<any> {
     return undefined;
   }
 

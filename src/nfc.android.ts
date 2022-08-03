@@ -1,10 +1,84 @@
 import { AndroidActivityEventData, AndroidActivityNewIntentEventData, AndroidApplication, Application, Utils } from "@nativescript/core";
-import { NdefListenerOptions, NfcApi, NfcNdefData, NfcNdefRecord, NfcTagData, NfcUriProtocols, WriteTagOptions } from "./nfc.common";
+import { NfcApi, NfcTagData, WriteTagOptions } from "./nfc.common";
 
 declare let Array: any;
 
 let onTagDiscoveredListener: (data: NfcTagData) => void = null;
-let onNdefDiscoveredListener: (data: NfcNdefData) => void = null;
+
+function byteArrayToJSArray(bytes): Array<number> {
+  let result = [];
+  for (let i = 0; i < bytes.length; i++) {
+    result.push(bytes[i]);
+  }
+  return result;
+}
+
+function bytesToHexString(bytes): string {
+  let dec,
+    hexstring,
+    bytesAsHexString = "";
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] >= 0) {
+      dec = bytes[i];
+    } else {
+      dec = 256 + bytes[i];
+    }
+    hexstring = dec.toString(16);
+    // zero padding
+    if (hexstring.length === 1) {
+      hexstring = "0" + hexstring;
+    }
+    bytesAsHexString += hexstring;
+  }
+  return bytesAsHexString;
+}
+
+export class MCTag implements NfcTagData {
+
+  constructor(public id: Array<number>, private mc: globalAndroid.nfc.tech.MifareClassic) { }
+
+  read(sector: number, blocks: number[]): Array<Array<number>> {
+
+    if (blocks.length == 0) throw "No Blocks given"
+
+    let mc = this.mc
+    mc.connect()
+
+    MCTag.authorize(mc, sector)
+
+    let first = mc.sectorToBlock(sector)
+    let result: number[][] = [];
+    for (let block of blocks) {
+      try {
+        let part = mc.transceive([0x30, first + block])
+        result.push(byteArrayToJSArray(part))
+      } catch (e) {
+        console.error(e)
+        throw `Error while reading block ${first + block}`
+      }
+    }
+
+    mc.close()
+
+    return result;
+  }
+
+  static authorize(mc: globalAndroid.nfc.tech.MifareClassic, sector: number) {
+    let auth = false
+    if (mc.authenticateSectorWithKeyA(sector, android.nfc.tech.MifareClassic.KEY_MIFARE_APPLICATION_DIRECTORY)) {
+      auth = true
+    } else if (mc.authenticateSectorWithKeyA(sector, android.nfc.tech.MifareClassic.KEY_DEFAULT)) {
+      auth = true
+    } else if (mc.authenticateSectorWithKeyA(sector, android.nfc.tech.MifareClassic.KEY_NFC_FORUM)) {
+      auth = true
+    }
+
+    if (!auth) {
+      throw "Can't authenticate sector"
+    }
+  }
+}
+
 
 export class NfcIntentHandler {
   public savedIntent: android.content.Intent = null;
@@ -32,230 +106,23 @@ export class NfcIntentHandler {
       return;
     }
 
-    let messages = intent.getParcelableArrayExtra(
-      android.nfc.NfcAdapter.EXTRA_NDEF_MESSAGES
-    );
-
-    // every action should map to a different listener you pass in at 'startListening'
-    if (action === android.nfc.NfcAdapter.ACTION_NDEF_DISCOVERED) {
-      let ndef = android.nfc.tech.Ndef.get(tag);
-
-      let ndefJson: NfcNdefData = this.ndefToJSON(ndef);
-
-      if (ndef === null && messages !== null) {
-        if (messages.length > 0) {
-          let message = messages[0] as android.nfc.NdefMessage;
-          ndefJson.message = this.messageToJSON(message);
-          ndefJson.type = "NDEF Push Protocol";
-        }
-        if (messages.length > 1) {
-          console.log("Expected 1 ndefMessage but found " + messages.length);
-        }
-      }
-
-      if (onNdefDiscoveredListener === null) {
-        console.log(
-          "Ndef discovered, but no listener was set via setOnNdefDiscoveredListener. Ndef: " +
-          JSON.stringify(ndefJson)
-        );
-      } else {
-        onNdefDiscoveredListener(ndefJson);
-      }
-      activity.getIntent().setAction("");
-    } else if (action === android.nfc.NfcAdapter.ACTION_TECH_DISCOVERED) {
-      let techList = tag.getTechList();
-
-      for (let i = 0; i < tag.getTechList().length; i++) {
-        let tech = tag.getTechList()[i];
-        /*
-        let tagTech = techList(t);
-        console.log("tagTech: " + tagTech);
-        if (tagTech === NdefFormatable.class.getName()) {
-          fireNdefFormatableEvent(tag);
-        } else if (tagTech === Ndef.class.getName()) {
-          let ndef = Ndef.get(tag);
-          fireNdefEvent(NDEF, ndef, messages);
-        }
-        */
-      }
-      activity.getIntent().setAction("");
-    } else if (action === android.nfc.NfcAdapter.ACTION_TAG_DISCOVERED) {
-      let result: NfcTagData = {
-        id: tag === null ? null : this.byteArrayToJSArray(tag.getId()),
-        techList: this.techListToJSON(tag)
-      };
-
-      if (onTagDiscoveredListener === null) {
-        console.log(
-          "Tag discovered, but no listener was set via setOnTagDiscoveredListener. Ndef: " +
-          JSON.stringify(result)
-        );
-      } else {
-        onTagDiscoveredListener(result);
-      }
-      activity.getIntent().setAction("");
-    }
-  }
-
-  byteArrayToJSArray(bytes): Array<number> {
-    let result = [];
-    for (let i = 0; i < bytes.length; i++) {
-      result.push(bytes[i]);
-    }
-    return result;
-  }
-
-  byteArrayToJSON(bytes): string {
-    let json = new org.json.JSONArray();
-    for (let i = 0; i < bytes.length; i++) {
-      json.put(bytes[i]);
-    }
-    return json.toString();
-  }
-
-  bytesToHexString(bytes): string {
-    let dec,
-      hexstring,
-      bytesAsHexString = "";
-    for (let i = 0; i < bytes.length; i++) {
-      if (bytes[i] >= 0) {
-        dec = bytes[i];
-      } else {
-        dec = 256 + bytes[i];
-      }
-      hexstring = dec.toString(16);
-      // zero padding
-      if (hexstring.length === 1) {
-        hexstring = "0" + hexstring;
-      }
-      bytesAsHexString += hexstring;
-    }
-    return bytesAsHexString;
-  }
-
-  bytesToString(bytes): string {
-    let result = "";
-    let i, c, c1, c2, c3;
-    i = c = c1 = c2 = c3 = 0;
-
-    // Perform byte-order check
-    if (bytes.length >= 3) {
-      if (
-        (bytes[0] & 0xef) === 0xef &&
-        (bytes[1] & 0xbb) === 0xbb &&
-        (bytes[2] & 0xbf) === 0xbf
-      ) {
-        // stream has a BOM at the start, skip over
-        i = 3;
-      }
+    let mc = android.nfc.tech.MifareClassic.get(tag);
+    if (mc === null) {
+      console.log("Tech Provider is empty")
+      return
     }
 
-    while (i < bytes.length) {
-      c = bytes[i] & 0xff;
-
-      if (c < 128) {
-        result += String.fromCharCode(c);
-        i++;
-      } else if (c > 191 && c < 224) {
-        if (i + 1 >= bytes.length) {
-          throw "Un-expected encoding error, UTF-8 stream truncated, or incorrect";
-        }
-        c2 = bytes[i + 1] & 0xff;
-        result += String.fromCharCode(((c & 31) << 6) | (c2 & 63));
-        i += 2;
-      } else {
-        if (i + 2 >= bytes.length || i + 1 >= bytes.length) {
-          throw "Un-expected encoding error, UTF-8 stream truncated, or incorrect";
-        }
-        c2 = bytes[i + 1] & 0xff;
-        c3 = bytes[i + 2] & 0xff;
-        result += String.fromCharCode(
-          ((c & 15) << 12) | ((c2 & 63) << 6) | (c3 & 63)
-        );
-        i += 3;
-      }
-    }
-    return result;
-  }
-
-  techListToJSON(tag): Array<string> {
-    if (tag !== null) {
-      let techList = [];
-      for (let i = 0; i < tag.getTechList().length; i++) {
-        techList.push(tag.getTechList()[i]);
-      }
-      return techList;
-    }
-    return null;
-  }
-
-  ndefToJSON(ndef: android.nfc.tech.Ndef): NfcNdefData {
-    if (ndef === null) {
-      return null;
-    }
-
-    let result = {
-      type: ndef.getType()[0],
-      maxSize: ndef.getMaxSize(),
-      writable: ndef.isWritable(),
-      message: this.messageToJSON(ndef.getCachedNdefMessage()),
-      canMakeReadOnly: ndef.canMakeReadOnly()
-    } as NfcNdefData;
-
-    let tag = ndef.getTag();
-    if (tag !== null) {
-      result.id = this.byteArrayToJSArray(tag.getId());
-      result.techList = this.techListToJSON(tag);
-    }
-
-    return result;
-  }
-
-  messageToJSON(message: android.nfc.NdefMessage): Array<NfcNdefRecord> {
-    try {
-      if (message === null) {
-        return null;
-      }
-      let records = message.getRecords();
-      let result = [];
-      for (let i = 0; i < records.length; i++) {
-        let record = this.recordToJSON(records[i]);
-        result.push(record);
-      }
-      return result;
-    } catch (e) {
-      console.log("Error in messageToJSON: " + e);
-      return null;
-    }
-  }
-
-  recordToJSON(record: android.nfc.NdefRecord): NfcNdefRecord {
-    let payloadAsString = this.bytesToString(record.getPayload());
-    const payloadAsStringWithPrefix = payloadAsString;
-    const type = record.getType()[0];
-
-    if (type === android.nfc.NdefRecord.RTD_TEXT[0]) {
-      let languageCodeLength = record.getPayload()[0];
-      payloadAsString = payloadAsStringWithPrefix.substring(
-        languageCodeLength + 1
+    if (onTagDiscoveredListener === null) {
+      console.log(
+        "Tag discovered, but no listener was set via setOnTagDiscoveredListener"
       );
-    } else if (type === android.nfc.NdefRecord.RTD_URI[0]) {
-      let prefix = NfcUriProtocols[record.getPayload()[0]];
-      if (!prefix) {
-        prefix = "";
-      }
-      payloadAsString = prefix + payloadAsString.slice(1);
+    } else {
+      onTagDiscoveredListener(
+        new MCTag(byteArrayToJSArray(tag.getId()), mc)
+      )
     }
 
-    return {
-      tnf: record.getTnf(),
-      type: type,
-      id: this.byteArrayToJSArray(record.getId()),
-      payload: this.byteArrayToJSON(record.getPayload()),
-      payloadAsHexString: this.bytesToHexString(record.getPayload()),
-      payloadAsStringWithPrefix: payloadAsStringWithPrefix,
-      payloadAsString: payloadAsString
-    };
+    intent.setAction("");
   }
 }
 
@@ -367,51 +234,6 @@ export class Nfc implements NfcApi {
     });
   }
 
-  public setOnNdefDiscoveredListener(
-    callback: (data: NfcNdefData) => void,
-    options?: NdefListenerOptions
-  ): Promise<any> {
-    return new Promise<void>((resolve, reject) => {
-      // TODO use options, some day
-      onNdefDiscoveredListener = callback;
-      resolve();
-    });
-  }
-
-  public eraseTag(): Promise<any> {
-    return new Promise<void>((resolve, reject) => {
-      const intent =
-        Application.android.foregroundActivity.getIntent() ||
-        nfcIntentHandler.savedIntent;
-      if (!intent) {
-        reject("Can't erase tag; didn't receive an intent");
-        return;
-      }
-
-      let tag = intent.getParcelableExtra(
-        android.nfc.NfcAdapter.EXTRA_TAG
-      ) as android.nfc.Tag;
-      let records = new Array.create(android.nfc.NdefRecord, 1);
-
-      let tnf = android.nfc.NdefRecord.TNF_EMPTY;
-      let type = Array.create("byte", 0);
-      let id = Array.create("byte", 0);
-      let payload = Array.create("byte", 0);
-      records[0] = new android.nfc.NdefRecord(tnf, type, id, payload);
-
-      // avoiding a TS issue in the generate Android definitions
-      let ndefClass = android.nfc.NdefMessage as any;
-      let ndefMessage = new ndefClass(records);
-
-      let errorMessage = Nfc.writeNdefMessage(ndefMessage, tag);
-      if (errorMessage === null) {
-        resolve();
-      } else {
-        reject(errorMessage);
-      }
-    });
-  }
-
   public writeTag(arg: WriteTagOptions): Promise<any> {
     return new Promise<void>((resolve, reject) => {
       try {
@@ -436,18 +258,45 @@ export class Nfc implements NfcApi {
           return;
         }
 
-        let records = this.jsonToNdefRecords(arg);
-
-        // avoiding a TS issue in the generate Android definitions
-        let ndefClass = android.nfc.NdefMessage as any;
-        let ndefMessage = new ndefClass(records);
-
-        let errorMessage = Nfc.writeNdefMessage(ndefMessage, tag);
-        if (errorMessage === null) {
-          resolve();
-        } else {
-          reject(errorMessage);
+        let mc = android.nfc.tech.MifareClassic.get(tag);
+        if (mc === null) {
+          console.log("Tech Provider is empty")
+          return
         }
+
+        console.log(arg.buffer)
+        let commands: Array<Uint8Array> = []
+        const chunkSize = 16;
+        for (let i = 0; i < arg.buffer.length; i += chunkSize) {
+          let chunk = arg.buffer.slice(i, i + chunkSize);
+          commands.push(chunk)
+        }
+        console.log(commands)
+
+        mc.connect()
+
+        MCTag.authorize(mc, arg.sector)
+        let block = mc.sectorToBlock(arg.sector)
+        console.log('starting from block', block)
+        try {
+          commands.forEach((cmd) => {
+            let buf = new Uint8Array(2 + cmd.length)
+            buf.set([0xA0, block], 0)
+            buf.set(cmd, 2)
+            console.log("writing", cmd)
+            let r = mc.transceive(buf)
+            console.log("transceive result", r[0])
+            block++
+          })
+        } catch (e) {
+          console.error("Error transceive on block", block, e)
+          reject(e)
+          return
+        }
+
+        mc.close()
+
+        resolve()
       } catch (ex) {
         reject(ex);
       }
@@ -494,178 +343,4 @@ export class Nfc implements NfcApi {
     }
   }
 
-  private static writeNdefMessage(
-    message: android.nfc.NdefMessage,
-    tag: android.nfc.Tag
-  ): string {
-    let ndef = android.nfc.tech.Ndef.get(tag);
-
-    if (ndef === null) {
-      let formatable = android.nfc.tech.NdefFormatable.get(tag);
-      if (formatable === null) {
-        return "Tag doesn't support NDEF";
-      }
-      formatable.connect();
-      formatable.format(message);
-      formatable.close();
-      return null;
-    }
-
-    try {
-      ndef.connect();
-    } catch (e) {
-      console.log("ndef connection error: " + e);
-      return "connection failed";
-    }
-
-    if (!ndef.isWritable()) {
-      return "Tag not writable";
-    }
-
-    let size = message.toByteArray().length;
-    let maxSize = ndef.getMaxSize();
-
-    if (maxSize < size) {
-      return (
-        "Message too long; tag capacity is " +
-        maxSize +
-        " bytes, message is " +
-        size +
-        " bytes"
-      );
-    }
-
-    ndef.writeNdefMessage(message);
-    ndef.close();
-    return null;
-  }
-
-  private jsonToNdefRecords(
-    input: WriteTagOptions
-  ): Array<android.nfc.NdefRecord> {
-    let nrOfRecords = 0;
-    nrOfRecords += input.bytesRecords ? input.bytesRecords.length : 0;
-    nrOfRecords += input.textRecords ? input.textRecords.length : 0;
-    nrOfRecords += input.uriRecords ? input.uriRecords.length : 0;
-    let records = new Array.create(android.nfc.NdefRecord, nrOfRecords);
-    let recordCounter: number = 0;
-
-    if (input.bytesRecords != null && input.bytesRecords != undefined) {
-      for (let i = 0; i < input.bytesRecords.length; i++) {
-        let record = input.bytesRecords[i];
-
-
-        let tnf = android.nfc.NdefRecord.TNF_WELL_KNOWN; // 0x01;
-
-        let type = Array.create("byte", 1);
-        type[0] = 0x54;
-
-        let id = Array.create("byte", record.id ? record.id.length : 0);
-        if (record.id) {
-          for (let j = 0; j < record.id.length; j++) {
-            id[j] = record.id[j];
-          }
-        }
-
-        let buffer = new DataView(record.payload)
-
-        let bytes = Array.create("byte", buffer.byteLength);
-        for (let j = 0; j < buffer.byteLength; j++) {
-          bytes[j] = buffer.getUint8(j);
-        }
-
-        records[recordCounter++] = new android.nfc.NdefRecord(tnf, type, id, bytes);
-      }
-    }
-
-    if (input.textRecords !== null && input.textRecords !== undefined) {
-      for (let i = 0; i < input.textRecords.length; i++) {
-        let textRecord = input.textRecords[i];
-
-        let langCode = textRecord.languageCode || "en";
-        let encoded = Nfc.stringToBytes(langCode + textRecord.text);
-        encoded.unshift(langCode.length);
-
-        let tnf = android.nfc.NdefRecord.TNF_WELL_KNOWN; // 0x01;
-
-        let type = Array.create("byte", 1);
-        type[0] = 0x54;
-
-        let id = Array.create("byte", textRecord.id ? textRecord.id.length : 0);
-        if (textRecord.id) {
-          for (let j = 0; j < textRecord.id.length; j++) {
-            id[j] = textRecord.id[j];
-          }
-        }
-
-        let payload = Array.create("byte", encoded.length);
-        for (let n = 0; n < encoded.length; n++) {
-          payload[n] = encoded[n];
-        }
-
-        records[recordCounter++] = new android.nfc.NdefRecord(tnf, type, id, payload);
-      }
-    }
-
-    if (input.uriRecords !== null && input.uriRecords !== undefined) {
-      for (let i = 0; i < input.uriRecords.length; i++) {
-        let uriRecord = input.uriRecords[i];
-        let uri = uriRecord.uri;
-
-        let prefix: string = "";
-
-        NfcUriProtocols.slice(1).forEach(protocol => {
-          if ((!prefix || prefix === "urn:") && uri.indexOf(protocol) === 0) {
-            prefix = protocol;
-          }
-        });
-
-        if (!prefix) {
-          prefix = "";
-        }
-
-        let encoded = Nfc.stringToBytes(uri.slice(prefix.length));
-        // prepend protocol code
-        encoded.unshift(NfcUriProtocols.indexOf(prefix));
-
-        let tnf = android.nfc.NdefRecord.TNF_WELL_KNOWN; // 0x01;
-
-        let type = Array.create("byte", 1);
-        type[0] = 0x55;
-
-        let id = Array.create("byte", uriRecord.id ? uriRecord.id.length : 0);
-        if (uriRecord.id) {
-          for (let j = 0; j < uriRecord.id.length; j++) {
-            id[j] = uriRecord.id[j];
-          }
-        }
-
-        let payload = Array.create("byte", encoded.length);
-        for (let n = 0; n < encoded.length; n++) {
-          payload[n] = encoded[n];
-        }
-
-        records[recordCounter++] = new android.nfc.NdefRecord(tnf, type, id, payload);
-      }
-    }
-    return records;
-  }
-
-  private static stringToBytes(input: string) {
-    let bytes = [];
-    for (let n = 0; n < input.length; n++) {
-      let c = input.charCodeAt(n);
-      if (c < 128) {
-        bytes[bytes.length] = c;
-      } else if (c > 127 && c < 2048) {
-        bytes[bytes.length] = (c >> 6) | 192;
-        bytes[bytes.length] = (c & 63) | 128;
-      } else {
-        bytes[bytes.length] = (c >> 12) | 224;
-        bytes[bytes.length] = ((c >> 6) & 63) | 128;
-        bytes[bytes.length] = (c & 63) | 128;
-      }
-    }
-    return bytes;
-  }
 }
