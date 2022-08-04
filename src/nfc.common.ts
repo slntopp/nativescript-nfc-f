@@ -78,11 +78,11 @@ export interface NfcApi {
 // this was done to generate a nice API for our users
 export class Nfc implements NfcApi {
   available(): Promise<boolean> {
-    return undefined;
+    return new Promise((resolve) => resolve(false));
   }
 
   enabled(): Promise<boolean> {
-    return undefined;
+    return new Promise((resolve) => resolve(false));
   }
 
   setOnTagDiscoveredListener(
@@ -90,10 +90,10 @@ export class Nfc implements NfcApi {
     blocks: number[],
     callback: (data: NfcTagData) => void
   ): Promise<any> {
-    return undefined;
+    return new Promise((resolve, reject) => reject("unimplemented"));
   }
 
   writeTag(arg: WriteTagOptions): Promise<any> {
-    return undefined;
+    return new Promise((resolve, reject) => reject("unimplemented"));
   }
 }
