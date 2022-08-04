@@ -34,7 +34,7 @@ function bytesToHexString(bytes): string {
 }
 
 export class MCTag implements NfcTagData {
-
+  public data: Array<Array<number>>
   constructor(public id: Array<number>, private mc: globalAndroid.nfc.tech.MifareClassic) { }
 
   read(sector: number, blocks: number[]): Array<Array<number>> {
@@ -60,6 +60,7 @@ export class MCTag implements NfcTagData {
 
     mc.close()
 
+    this.data = result
     return result;
   }
 
@@ -82,47 +83,57 @@ export class MCTag implements NfcTagData {
 
 export class NfcIntentHandler {
   public savedIntent: android.content.Intent = null;
+  public static lock = false
 
   constructor() { }
 
   parseMessage(): void {
-    const activity =
-      Application.android.foregroundActivity ||
-      Application.android.startActivity;
-    let intent = activity.getIntent();
-    if (intent === null || this.savedIntent === null) {
-      return;
-    }
+    console.log("parseMessage called, lock", NfcIntentHandler.lock)
+    if (NfcIntentHandler.lock) return
+    NfcIntentHandler.lock = true;
+    (() => {
 
-    let action = intent.getAction();
-    if (action === null) {
-      return;
-    }
+      const activity =
+        Application.android.foregroundActivity ||
+        Application.android.startActivity;
+      let intent = activity.getIntent();
+      if (intent === null || this.savedIntent === null) {
+        return;
+      }
 
-    let tag = intent.getParcelableExtra(
-      android.nfc.NfcAdapter.EXTRA_TAG
-    ) as android.nfc.Tag;
-    if (!tag) {
-      return;
-    }
+      let action = intent.getAction();
+      if (action === null || action === '') {
+        return;
+      }
+      console.log(`==== ACTION '${action}' ====`)
 
-    let mc = android.nfc.tech.MifareClassic.get(tag);
-    if (mc === null) {
-      console.log("Tech Provider is empty")
-      return
-    }
+      let tag = intent.getParcelableExtra(
+        android.nfc.NfcAdapter.EXTRA_TAG
+      ) as android.nfc.Tag;
+      if (!tag) {
+        return;
+      }
 
-    if (onTagDiscoveredListener === null) {
-      console.log(
-        "Tag discovered, but no listener was set via setOnTagDiscoveredListener"
-      );
-    } else {
-      onTagDiscoveredListener(
-        new MCTag(byteArrayToJSArray(tag.getId()), mc)
-      )
-    }
+      let mc = android.nfc.tech.MifareClassic.get(tag);
+      if (mc === null) {
+        console.log("Tech Provider is empty")
+        return
+      }
 
-    intent.setAction("");
+      if (onTagDiscoveredListener === null) {
+        console.log(
+          "Tag discovered, but no listener was set via setOnTagDiscoveredListener"
+        );
+      } else {
+        onTagDiscoveredListener(
+          new MCTag(byteArrayToJSArray(tag.getId()), mc)
+        )
+      }
+
+      intent.setAction("");
+    })()
+
+    NfcIntentHandler.lock = false;
   }
 }
 
@@ -226,10 +237,19 @@ export class Nfc implements NfcApi {
   }
 
   public setOnTagDiscoveredListener(
+    sector: number,
+    blocks: number[],
     callback: (data: NfcTagData) => void
   ): Promise<any> {
     return new Promise<void>((resolve, reject) => {
-      onTagDiscoveredListener = callback;
+      onTagDiscoveredListener = (data: NfcTagData) => {
+        try {
+          data.read(sector, blocks)
+        } catch (e) {
+          reject(e)
+        }
+        callback(data)
+      }
       resolve();
     });
   }
@@ -280,9 +300,10 @@ export class Nfc implements NfcApi {
         console.log('starting from block', block)
         try {
           commands.forEach((cmd) => {
-            let buf = new Uint8Array(2 + cmd.length)
-            buf.set([0xA0, block], 0)
-            buf.set(cmd, 2)
+            let buf = Array.create("byte", 2 + cmd.length)
+            buf[0] = 0xA0
+            buf[1] = block
+            for (let i = 0; i < cmd.length; i++) buf[i + 2] = cmd[i]
             console.log("writing", cmd)
             let r = mc.transceive(buf)
             console.log("transceive result", r[0])

@@ -19,6 +19,7 @@ export interface WriteTagOptions {
 
 export interface NfcTagData {
   id?: Array<number>;
+  data: Array<Array<number>>
   read(sector: number, blocks: number[]): Array<Array<number>>
 }
 
@@ -68,6 +69,8 @@ export interface NfcApi {
    * Set to null to remove the listener.
    */
   setOnTagDiscoveredListener(
+    sector: number,
+    blocks: number[],
     callback: (data: NfcTagData) => void
   ): Promise<any>;
 }
@@ -83,6 +86,8 @@ export class Nfc implements NfcApi {
   }
 
   setOnTagDiscoveredListener(
+    sector: number,
+    blocks: number[],
     callback: (data: NfcTagData) => void
   ): Promise<any> {
     return undefined;
